@@ -744,12 +744,8 @@
                 inset: 0;
                 width: 100%;
                 height: 100%;
-                opacity: 0;
-                transition: opacity 350ms cubic-bezier(0.23, 1, 0.32, 1);
-                image-rendering: pixelated;
                 pointer-events: none;
             }
-            .pixel-card:hover canvas { opacity: 1; }
 
             /* ─── 3D Globe View ─────────────────────────────────────── */
             .home__3d {
@@ -1365,55 +1361,27 @@
                 setTimeout(() => { wasDragging = false; }, 50);
             });
 
-            /* ─── Pixel / Dither view ───────────────────────────────── */
-            // Bayer 8×8 ordered-dithering threshold matrix (0–63)
-            const bayer8 = [
-                [ 0, 32,  8, 40,  2, 34, 10, 42],
-                [48, 16, 56, 24, 50, 18, 58, 26],
-                [12, 44,  4, 36, 14, 46,  6, 38],
-                [60, 28, 52, 20, 62, 30, 54, 22],
-                [ 3, 35, 11, 43,  1, 33,  9, 41],
-                [51, 19, 59, 27, 49, 17, 57, 25],
-                [15, 47,  7, 39, 13, 45,  5, 37],
-                [63, 31, 55, 23, 61, 29, 53, 21],
-            ];
+            /* ─── Pixel / mosaic cursor view ───────────────────────── */
+            const BLOCK  = 14;  // display-px per mosaic square
+            const RADIUS = 88;  // cursor circle radius in display-px
 
-            function ditherToCanvas(img, canvas) {
-                const BLOCK = 5; // sample every N pixels → defines pixel size
-                const sw = Math.max(1, Math.floor(img.naturalWidth  / BLOCK));
-                const sh = Math.max(1, Math.floor(img.naturalHeight / BLOCK));
-
-                // Down-sample image into a tiny temp canvas
-                const tmp = document.createElement("canvas");
-                tmp.width  = sw;
-                tmp.height = sh;
-                const tctx = tmp.getContext("2d");
+            // Build a color-mosaic offscreen canvas at display size
+            function buildMosaic(img, dw, dh) {
+                const sw = Math.max(1, Math.round(dw / BLOCK));
+                const sh = Math.max(1, Math.round(dh / BLOCK));
+                const tiny = document.createElement("canvas");
+                tiny.width  = sw;
+                tiny.height = sh;
+                const tctx = tiny.getContext("2d");
                 tctx.drawImage(img, 0, 0, sw, sh);
-                const { data } = tctx.getImageData(0, 0, sw, sh);
 
-                // Write dithered pixels to the output canvas at the same tiny size;
-                // CSS + image-rendering:pixelated scales it up to fill the card
-                canvas.width  = sw;
-                canvas.height = sh;
-                const ctx = canvas.getContext("2d");
-                const out = ctx.createImageData(sw, sh);
-
-                for (let y = 0; y < sh; y++) {
-                    for (let x = 0; x < sw; x++) {
-                        const i = (y * sw + x) * 4;
-                        const gray =
-                            0.299 * data[i] +
-                            0.587 * data[i + 1] +
-                            0.114 * data[i + 2];
-                        const threshold = (bayer8[y % 8][x % 8] / 64) * 255;
-                        const v = gray > threshold ? 255 : 0;
-                        out.data[i]     = v;
-                        out.data[i + 1] = v;
-                        out.data[i + 2] = v;
-                        out.data[i + 3] = 255;
-                    }
-                }
-                ctx.putImageData(out, 0, 0);
+                const out = document.createElement("canvas");
+                out.width  = dw;
+                out.height = dh;
+                const octx = out.getContext("2d");
+                octx.imageSmoothingEnabled = false;
+                octx.drawImage(tiny, 0, 0, dw, dh);
+                return out;
             }
 
             const pixelGrid = document.getElementById("pixel-grid");
@@ -1429,21 +1397,39 @@
                 img.loading = "lazy";
 
                 const cvs = document.createElement("canvas");
-                let painted = false;
+                let mosaic = null;
 
-                // Dither lazily on first hover to avoid blocking on load
-                card.addEventListener("mouseenter", () => {
-                    if (!painted && img.complete && img.naturalWidth) {
-                        try { ditherToCanvas(img, cvs); painted = true; }
-                        catch (_) {}   // CORS guard — graceful silent fail
-                    }
+                const ensureMosaic = () => {
+                    if (mosaic) return mosaic;
+                    if (!img.complete || !img.naturalWidth) return null;
+                    try {
+                        const dw = card.offsetWidth;
+                        const dh = card.offsetHeight;
+                        mosaic = buildMosaic(img, dw, dh);
+                        cvs.width  = dw;
+                        cvs.height = dh;
+                    } catch (_) {}
+                    return mosaic;
+                };
+
+                card.addEventListener("mousemove", (e) => {
+                    const m = ensureMosaic();
+                    if (!m) return;
+                    const rect = card.getBoundingClientRect();
+                    const x = e.clientX - rect.left;
+                    const y = e.clientY - rect.top;
+                    const ctx = cvs.getContext("2d");
+                    ctx.clearRect(0, 0, cvs.width, cvs.height);
+                    ctx.save();
+                    ctx.beginPath();
+                    ctx.arc(x, y, RADIUS, 0, Math.PI * 2);
+                    ctx.clip();
+                    ctx.drawImage(m, 0, 0);
+                    ctx.restore();
                 });
-                // If image loads after hover already happened
-                img.addEventListener("load", () => {
-                    if (!painted) {
-                        try { ditherToCanvas(img, cvs); painted = true; }
-                        catch (_) {}
-                    }
+
+                card.addEventListener("mouseleave", () => {
+                    cvs.getContext("2d").clearRect(0, 0, cvs.width, cvs.height);
                 });
 
                 card.appendChild(img);
