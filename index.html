@@ -1362,13 +1362,13 @@
             });
 
             /* ─── Pixel / mosaic cursor view ───────────────────────── */
-            const BLOCK  = 14;  // display-px per mosaic square
-            const RADIUS = 88;  // cursor circle radius in display-px
+            const PIXEL_BLOCK  = 14;  // display-px per mosaic square
+            const PIXEL_RADIUS = 88;  // cursor circle radius in display-px
 
             // Build a color-mosaic offscreen canvas at display size
             function buildMosaic(img, dw, dh) {
-                const sw = Math.max(1, Math.round(dw / BLOCK));
-                const sh = Math.max(1, Math.round(dh / BLOCK));
+                const sw = Math.max(1, Math.round(dw / PIXEL_BLOCK));
+                const sh = Math.max(1, Math.round(dh / PIXEL_BLOCK));
                 const tiny = document.createElement("canvas");
                 tiny.width  = sw;
                 tiny.height = sh;
@@ -1422,7 +1422,7 @@
                     ctx.clearRect(0, 0, cvs.width, cvs.height);
                     ctx.save();
                     ctx.beginPath();
-                    ctx.arc(x, y, RADIUS, 0, Math.PI * 2);
+                    ctx.arc(x, y, PIXEL_RADIUS, 0, Math.PI * 2);
                     ctx.clip();
                     ctx.drawImage(m, 0, 0);
                     ctx.restore();
